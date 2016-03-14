@@ -1,20 +1,21 @@
 Package: logisticPCA
 Type: Package
 Title: Binary Dimensionality Reduction
-Version: 0.1
-Date: 2015-10-04
+Version: 0.2
+Date: 2016-03-13
 NeedsCompilation: yes
 ByteCompile: yes
 Author: Andrew J. Landgraf
 Maintainer: Andrew J. Landgraf <andland@gmail.com>
-Description: Dimensionality reduction techniques for binary data including logistic
-    PCA.
+Description: Dimensionality reduction techniques for binary data including
+    logistic PCA.
 License: MIT + file LICENSE
 LazyData: true
 URL: https://github.com/andland/logisticPCA
 Imports: ggplot2
-Suggests: irlba, testthat, knitr
+Suggests: rARPACK (>= 0.10-0), testthat (>= 0.11.0), knitr, rmarkdown
 VignetteBuilder: knitr
-Packaged: 2015-10-05 14:14:15 UTC; landgraf
+RoxygenNote: 5.0.1
+Packaged: 2016-03-14 01:30:10 UTC; andrew
 Repository: CRAN
-Date/Publication: 2015-10-05 17:07:42
+Date/Publication: 2016-03-14 07:54:24

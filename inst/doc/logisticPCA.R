@@ -14,7 +14,7 @@ df = data.frame(
   Returns = c("`mu`, `A`, `B`", "`mu`, `U`, (`PCs`)", "`mu`, `H`, (`U`, `PCs`)"),
   Specify_M = c("No", "Yes", "Yes")
 )
-knitr::kable(df, col.names = c("Formulation", "Function", "Class", "Returns", "Specify M?"))
+knitr::kable(df, col.names = c("Formulation", "Function", "Class", "Returns", "Specify m?"))
 
 ## ----lsvd----------------------------------------------------------------
 logsvd_model = logisticSVD(house_votes84, k = 2)
@@ -23,12 +23,12 @@ logsvd_model = logisticSVD(house_votes84, k = 2)
 logsvd_model
 
 ## ----cvlpca--------------------------------------------------------------
-logpca_cv = cv.lpca(house_votes84, ks = 2, Ms = 1:10)
+logpca_cv = cv.lpca(house_votes84, ks = 2, ms = 1:10)
 plot(logpca_cv)
 
 ## ----lpca----------------------------------------------------------------
-logpca_model = logisticPCA(house_votes84, k = 2, M = which.min(logpca_cv))
-clogpca_model = convexLogisticPCA(house_votes84, k = 2, M = which.min(logpca_cv))
+logpca_model = logisticPCA(house_votes84, k = 2, m = which.min(logpca_cv))
+clogpca_model = convexLogisticPCA(house_votes84, k = 2, m = which.min(logpca_cv))
 
 ## ----clpca_trace---------------------------------------------------------
 plot(clogpca_model, type = "trace")
@@ -38,9 +38,12 @@ plot(logsvd_model, type = "trace")
 
 ## ----plot, warning=FALSE-------------------------------------------------
 party = rownames(house_votes84)
-plot(logsvd_model, type = "scores") + geom_point(aes(colour = party)) + ggtitle("Exponential Family PCA") + scale_colour_manual(values = c("blue", "red"))
-plot(logpca_model, type = "scores") + geom_point(aes(colour = party)) + ggtitle("Logistic PCA") + scale_colour_manual(values = c("blue", "red"))
-plot(clogpca_model, type = "scores") + geom_point(aes(colour = party)) + ggtitle("Convex Logistic PCA") + scale_colour_manual(values = c("blue", "red"))
+plot(logsvd_model, type = "scores") + geom_point(aes(colour = party)) + 
+  ggtitle("Exponential Family PCA") + scale_colour_manual(values = c("blue", "red"))
+plot(logpca_model, type = "scores") + geom_point(aes(colour = party)) + 
+  ggtitle("Logistic PCA") + scale_colour_manual(values = c("blue", "red"))
+plot(clogpca_model, type = "scores") + geom_point(aes(colour = party)) + 
+  ggtitle("Convex Logistic PCA") + scale_colour_manual(values = c("blue", "red"))
 
 ## ----fitted--------------------------------------------------------------
 head(fitted(logpca_model, type = "response"))

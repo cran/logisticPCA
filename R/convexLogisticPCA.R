@@ -7,10 +7,10 @@
 #'
 #' @param x matrix with all binary entries
 #' @param k number of principal components to return
-#' @param M value to approximate the saturated model
+#' @param m value to approximate the saturated model
 #' @param quiet logical; whether the calculation should give feedback
-#' @param use_irlba logical; if \code{TRUE}, the function uses the irlba package
-#'   to more quickly calculate the eigen-decomposition
+#' @param partial_decomp logical; if \code{TRUE}, the function uses the rARPACK package
+#'   to quickly initialize \code{H} when \code{ncol(x)} is large and \code{k} is small 
 #' @param max_iters number of maximum iterations
 #' @param conv_criteria convergence criteria. The difference between average deviance
 #'   in successive iterations
@@ -24,6 +24,7 @@
 #'   sometimes work better. The default is \code{ss_factor = 4}.
 #'   If it is not converging, try \code{ss_factor = 1}.
 #' @param weights an optional matrix of the same size as the \code{x} with non-negative weights
+#' @param M depricated. Use \code{m} instead
 #'
 #' @return An S3 object of class \code{clpca} which is a list with the
 #' following components:
@@ -31,13 +32,17 @@
 #' \item{H}{a rank \code{k} Fantope matrix}
 #' \item{U}{a \code{ceiling(k)}-dimentional orthonormal matrix with the loadings}
 #' \item{PCs}{the princial component scores}
-#' \item{M}{the parameter inputed}
+#' \item{m}{the parameter inputed}
 #' \item{iters}{number of iterations required for convergence}
 #' \item{loss_trace}{the trace of the average negative log likelihood using the Fantope matrix}
 #' \item{proj_loss_trace}{the trace of the average negative log likelihood using the projection matrix}
 #' \item{prop_deviance_expl}{the proportion of deviance explained by this model.
 #'    If \code{main_effects = TRUE}, the null model is just the main effects, otherwise
 #'    the null model estimates 0 for all natural parameters.}
+#'
+#' @references 
+#' Landgraf, A.J. & Lee, Y., 2015. Dimensionality reduction for binary data through 
+#' the projection of natural parameters. arXiv preprint arXiv:1510.06112.
 #'
 #' @examples
 #' # construct a low rank matrix in the logit scale
@@ -50,20 +55,35 @@
 #' mat = (matrix(runif(rows * cols), rows, cols) <= inv.logit.mat(mat_logit)) * 1.0
 #'
 #' # run convex logistic PCA on it
-#' clpca = convexLogisticPCA(mat, k = 1, M = 4)
+#' clpca = convexLogisticPCA(mat, k = 1, m = 4)
 #' @export
-convexLogisticPCA <- function(x, k = 2, M = 4, quiet = TRUE, use_irlba = FALSE,
+convexLogisticPCA <- function(x, k = 2, m = 4, quiet = TRUE, partial_decomp = FALSE,
                               max_iters = 1000, conv_criteria = 1e-6, random_start = FALSE,
-                              start_H, mu, main_effects = TRUE, ss_factor = 4, weights) {
-  # if (any(is.na(x))) {
-  #   stop("This function currently can't deal with missing values")
-  # }
+                              start_H, mu, main_effects = TRUE, ss_factor = 4, weights, M) {
+  if (!missing(M)) {
+    m = M
+    warning("M is depricated. Use m instead. ",
+            "Using m = ", m)
+  }
+  if (partial_decomp) {
+    if (!requireNamespace("rARPACK", quietly = TRUE)) {
+      message("rARPACK must be installed to use partial_decomp")
+      partial_decomp = FALSE
+    }
+  }
+  
   x = as.matrix(x)
   n = nrow(x)
   d = ncol(x)
   q = 2 * x - 1
   q[is.na(q)] <- 0
-  eta = q * abs(M)
+  eta = q * abs(m)
+  
+  if (k >= d & partial_decomp) {
+    message("k >= dimension. Setting partial_decomp = FALSE")
+    partial_decomp = FALSE
+    k = d
+  }
 
   if (missing(weights) || length(weights) == 1) {
     weights = 1.0
@@ -107,8 +127,8 @@ convexLogisticPCA <- function(x, k = 2, M = 4, quiet = TRUE, use_irlba = FALSE,
     HU = project.Fantope(U %*% t(U), k)
     H = HU$H
   } else {
-    if (use_irlba) {
-      udv = irlba::irlba(scale(q, center = main_effects, scale = F), nu = k, nv = k)
+    if (partial_decomp) {
+      udv = rARPACK::svds(scale(q, center = main_effects, scale = F), k = k)
     } else {
       udv = svd(scale(q, center = main_effects, scale = F), nu = k, nv = k)
     }
@@ -143,8 +163,8 @@ convexLogisticPCA <- function(x, k = 2, M = 4, quiet = TRUE, use_irlba = FALSE,
   loss_trace[1] <- proj_loss_trace[1] <- min_loss
 
   H_lag = H
-  for (m in 1:max_iters) {
-    y = H + (m - 2) / (m + 1) * (H - H_lag)
+  for (i in 1:max_iters) {
+    y = H + (i - 2) / (i + 1) * (H - H_lag)
     # y = H
     H_lag = H
     # y = H
@@ -162,21 +182,21 @@ convexLogisticPCA <- function(x, k = 2, M = 4, quiet = TRUE, use_irlba = FALSE,
 
     theta = mu_mat + eta_centered %*% H
     loglike = log_like_Bernoulli_weighted(q = q, theta = theta, weights)
-    loss_trace[m + 1] = -loglike / sum_weights
+    loss_trace[i + 1] = -loglike / sum_weights
 
     proj_theta = mu_mat + eta_centered %*% tcrossprod(HU$U)
     proj_loglike = log_like_Bernoulli_weighted(q = q, theta = proj_theta, weights)
-    proj_loss_trace[m + 1] = -proj_loglike / sum_weights
+    proj_loss_trace[i + 1] = -proj_loglike / sum_weights
 
     if (!quiet) {
-      cat(m,"  ",loss_trace[m + 1],"  ",proj_loss_trace[m+1],"\n")
+      cat(i,"  ",loss_trace[i + 1],"  ",proj_loss_trace[i + 1],"\n")
     }
-    if (loss_trace[m+1] < min_loss) {
-      min_loss = loss_trace[m + 1]
+    if (loss_trace[i + 1] < min_loss) {
+      min_loss = loss_trace[i + 1]
       best_HU = HU
       best_loglike = loglike
     }
-    if (abs(loss_trace[m+1]-loss_trace[m]) < conv_criteria | min_loss == 0) {
+    if (abs(loss_trace[i + 1]-loss_trace[i]) < conv_criteria | min_loss == 0) {
       break
     }
   }
@@ -197,10 +217,11 @@ convexLogisticPCA <- function(x, k = 2, M = 4, quiet = TRUE, use_irlba = FALSE,
                 H = best_HU$H,
                 U = best_HU$U,
                 PCs = eta_centered %*% best_HU$U,
-                M = M,
-                iters = m,
-                loss_trace = loss_trace[1:(m + 1)],
-                proj_loss_trace = proj_loss_trace[1:(m + 1)],
+                m = m,
+                M = m, # need to depricate after 0.1.1
+                iters = i,
+                loss_trace = loss_trace[1:(i + 1)],
+                proj_loss_trace = proj_loss_trace[1:(i + 1)],
                 prop_deviance_expl = 1 - best_loglike / null_loglike)
   class(object) <- "clpca"
   return(object)
@@ -224,11 +245,11 @@ project.Fantope <- function(x, k) {
   lower = vals[length(vals)] - k / length(vals)
   upper = max(vals)
   while(TRUE) {
-    theta = (lower+upper) / 2
+    theta = (lower + upper) / 2
     sum.eig.vals = sum(pmin(pmax(vals - theta, 0), 1))
-    if (abs(sum.eig.vals-k) < 1e-10) {
+    if (abs(sum.eig.vals - k) < 1e-10) {
       break
-    } else if (sum.eig.vals>k) {
+    } else if (sum.eig.vals > k) {
       lower = theta
     } else {
       upper = theta
@@ -241,6 +262,8 @@ project.Fantope <- function(x, k) {
 
 #' @title Predict Convex Logistic PCA scores or reconstruction on new data
 #'
+#' @description Predict Convex Logistic PCA scores or reconstruction on new data
+#' 
 #' @param object convex logistic PCA object
 #' @param newdata matrix with all binary entries. If missing, will use the
 #'  data that \code{object} was fit on
@@ -262,7 +285,7 @@ project.Fantope <- function(x, k) {
 #' mat_new = (matrix(runif(rows * cols), rows, cols) <= inv.logit.mat(mat_logit_new)) * 1.0
 #'
 #' # run logistic PCA on it
-#' clpca = convexLogisticPCA(mat, k = 1, M = 4, main_effects = FALSE)
+#' clpca = convexLogisticPCA(mat, k = 1, m = 4, main_effects = FALSE)
 #'
 #' PCs = predict(clpca, mat_new)
 #' @export
@@ -273,14 +296,14 @@ predict.clpca <- function(object, newdata, type = c("PCs", "link", "response"), 
     if (missing(newdata)) {
       PCs = object$PCs
     } else {
-      eta = ((as.matrix(newdata) * 2) - 1) * object$M
+      eta = ((as.matrix(newdata) * 2) - 1) * object$m
       eta_centered = scale(eta, center = object$mu, scale = FALSE)
       eta_centered[is.na(newdata)] <- 0
       PCs = eta_centered %*% object$U
     }
     return(PCs)
   } else {
-    eta = ((as.matrix(newdata) * 2) - 1) * object$M
+    eta = ((as.matrix(newdata) * 2) - 1) * object$m
     eta_centered = scale(eta, center = object$mu, scale = FALSE)
     eta_centered[is.na(newdata)] <- 0
     theta = outer(rep(1, nrow(eta)), object$mu) + eta_centered %*% object$H
@@ -313,7 +336,7 @@ predict.clpca <- function(object, newdata, type = c("PCs", "link", "response"), 
 #' mat = (matrix(runif(rows * cols), rows, cols) <= inv.logit.mat(mat_logit)) * 1.0
 #'
 #' # run convex logistic PCA on it
-#' clpca = convexLogisticPCA(mat, k = 2, M = 4, main_effects = FALSE)
+#' clpca = convexLogisticPCA(mat, k = 2, m = 4, main_effects = FALSE)
 #'
 #' \dontrun{
 #' plot(clpca)
@@ -356,7 +379,7 @@ plot.clpca <- function(x, type = c("trace", "loadings", "scores"), ...) {
 print.clpca <- function(x, ...) {
   cat(nrow(x$PCs), "rows and ")
   cat(nrow(x$H), "columns\n")
-  cat("Rank", ncol(x$U), "Fantope solution with M =", x$M, "\n")
+  cat("Rank", ncol(x$U), "Fantope solution with m =", x$m, "\n")
   cat("\n")
   cat(round(x$prop_deviance_expl * 100, 1), "% of deviance explained\n", sep = "")
   cat(x$iters, "iterations to converge\n")
@@ -367,18 +390,19 @@ print.clpca <- function(x, ...) {
 #' @title CV for convex logistic PCA
 #'
 #' @description
-#' Run cross validation on dimension and \code{M} for convex logistic PCA
+#' Run cross validation on dimension and \code{m} for convex logistic PCA
 #'
 #' @param x matrix with all binary entries
 #' @param ks the different dimensions \code{k} to try
-#' @param Ms the different approximations to the saturated model \code{M} to try
+#' @param ms the different approximations to the saturated model \code{m} to try
 #' @param folds if \code{folds} is a scalar, then it is the number of folds. If
 #'  it is a vector, it should be the same length as the number of rows in \code{x}
 #' @param quiet logical; whether the function should display progress
+#' @param Ms depricated. Use \code{ms} instead
 #' @param ... Additional arguments passed to convexLogisticPCA
 #'
 #' @return A matrix of the CV negative log likelihood with \code{k} in rows and
-#'  \code{M} in columns
+#'  \code{m} in columns
 #'
 #' @examples
 #' # construct a low rank matrix in the logit scale
@@ -391,11 +415,16 @@ print.clpca <- function(x, ...) {
 #' mat = (matrix(runif(rows * cols), rows, cols) <= inv.logit.mat(mat_logit)) * 1.0
 #'
 #' \dontrun{
-#' negloglikes = cv.clpca(mat, ks = 1:9, Ms = 3:6)
+#' negloglikes = cv.clpca(mat, ks = 1:9, ms = 3:6)
 #' plot(negloglikes)
 #' }
 #' @export
-cv.clpca <- function(x, ks, Ms = seq(2, 10, by = 2), folds = 5, quiet = TRUE, ...) {
+cv.clpca <- function(x, ks, ms = seq(2, 10, by = 2), folds = 5, quiet = TRUE, Ms, ...) {
+  if (!missing(Ms)) {
+    ms = Ms
+    warning("Ms is depricated. Use ms instead.\n", 
+            "Using ms in ", paste(ms, collapse = ","))
+  }
   # TODO: does not support weights
   q = 2 * as.matrix(x) - 1
   q[is.na(q)] <- 0
@@ -413,31 +442,31 @@ cv.clpca <- function(x, ks, Ms = seq(2, 10, by = 2), folds = 5, quiet = TRUE, ..
     cv = sample(1:folds, nrow(q), replace = TRUE)
   }
 
-  log_likes = matrix(0, length(ks), length(Ms),
-                     dimnames = list(k = ks, M = Ms))
+  log_likes = matrix(0, length(ks), length(ms),
+                     dimnames = list(k = ks, m = ms))
   for (k in ks) {
-    for (M in Ms) {
+    for (m in ms) {
       if (!quiet) {
-        cat("k =", k, "M =", M, "")
+        cat("k =", k, "m =", m, "")
       }
       for (c in unique(cv)) {
         if (!quiet) {
           cat(".")
         }
-        clpca = convexLogisticPCA(x[c != cv, ], k = k, M = M, ...)
+        clpca = convexLogisticPCA(x[c != cv, ], k = k, m = m, ...)
         pred_theta = predict(clpca, newdat = x[c == cv, ], type = "link")
-        log_likes[k == ks, M == Ms] = log_likes[k == ks, M == Ms] +
+        log_likes[k == ks, m == ms] = log_likes[k == ks, m == ms] +
           log_like_Bernoulli(q = q[c == cv, ], theta = pred_theta)
       }
       if (!quiet) {
-        cat("", -log_likes[k == ks, M == Ms], "\n")
+        cat("", -log_likes[k == ks, m == ms], "\n")
       }
     }
   }
   class(log_likes) <- c("matrix", "cv.lpca")
   which_min = which(log_likes == max(log_likes), arr.ind = TRUE)
   if (!quiet) {
-    cat("Best: k =", ks[which_min[1]], "M =", Ms[which_min[2]], "\n")
+    cat("Best: k =", ks[which_min[1]], "m =", ms[which_min[2]], "\n")
   }
 
   return(-log_likes)

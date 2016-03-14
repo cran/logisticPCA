@@ -9,9 +9,9 @@ mat_logit = outer(rnorm(rows), rnorm(cols))
 
 mat = (matrix(runif(rows * cols), rows, cols) <= inv.logit.mat(mat_logit)) * 1.0
 
-lpca = logisticPCA(mat, k = k, M = 4, main_effects = FALSE)
-lsvd = logisticSVD(mat, k = k, main_effects = FALSE, conv_criteria = 1e-4, use_irlba = FALSE)
-clpca = convexLogisticPCA(mat, M = 4, k = k, main_effects = FALSE)
+lpca = logisticPCA(mat, k = k, m = 4, main_effects = FALSE)
+lsvd = logisticSVD(mat, k = k, main_effects = FALSE, conv_criteria = 1e-4, partial_decomp = FALSE)
+clpca = convexLogisticPCA(mat, m = 4, k = k, main_effects = FALSE)
 
 pred1 = predict(lpca, mat)
 pred1l = predict(lpca, mat, type = "link")
@@ -91,9 +91,9 @@ rm(lsvd, lpca, clpca, pred1, pred1l, pred1r, pred2, pred2l, pred2r,
    pred3, pred3l, pred3r, fit1l, fit1r, fit2l, fit2r)
 
 k = 2
-lpca = logisticPCA(mat, M = 4, k = k, main_effects = FALSE)
-lsvd = logisticSVD(mat, k = k, main_effects = FALSE, conv_criteria = 1e-4, use_irlba = FALSE)
-clpca = convexLogisticPCA(mat, M = 4, k = k, main_effects = FALSE)
+lpca = logisticPCA(mat, m = 4, k = k, main_effects = FALSE)
+lsvd = logisticSVD(mat, k = k, main_effects = FALSE, conv_criteria = 1e-4, partial_decomp = FALSE)
+clpca = convexLogisticPCA(mat, m = 4, k = k, main_effects = FALSE)
 
 pred1 = predict(lpca, mat)
 pred1l = predict(lpca, mat, type = "link")
@@ -162,34 +162,19 @@ is_less_than_equal <- function (expected, label = NULL, ...)
   }
 }
 
-is_more_than_equal <- function (expected, label = NULL, ...)
-{
-  if (is.null(label)) {
-    label <- testthat:::find_expr("expected")
-  }
-  else if (!is.character(label) || length(label) != 1) {
-    label <- deparse(label)
-  }
-  function(actual) {
-    diff <- expected - actual
-    expectation(diff <= 0, paste0("not more than ", label,
-                                  ". Difference: ", format(diff)), paste0("is more than"))
-  }
-}
-
 test_that("response between 0 and 1", {
-  expect_that(min(pred1r), is_more_than_equal(0))
-  expect_that(min(fit1r), is_more_than_equal(0))
-
-  expect_that(max(pred1r), is_less_than_equal(1))
-  expect_that(max(fit1r), is_less_than_equal(1))
-
-  expect_that(min(pred2r), is_more_than_equal(0))
-  expect_that(min(fit2r), is_more_than_equal(0))
-
-  expect_that(max(pred2r), is_less_than_equal(1))
-  expect_that(max(fit2r), is_less_than_equal(1))
-
-  expect_that(min(pred3r), is_more_than_equal(0))
-  expect_that(max(pred3r), is_less_than_equal(1))
+  expect_gte(min(pred1r), 0)
+  expect_gte(min(fit1r), 0)
+  
+  expect_lte(max(pred1r), 1)
+  expect_lte(max(fit1r), 1)
+  
+  expect_gte(min(pred2r), 0)
+  expect_gte(min(fit2r), 0)
+  
+  expect_lte(max(pred2r), 1)
+  expect_lte(max(fit2r), 1)
+  
+  expect_gte(min(pred3r), 0)
+  expect_lte(max(pred3r), 1)
 })
